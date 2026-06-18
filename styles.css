@@ -1,0 +1,40 @@
+/* Resizable chart popout. Core Chart.js uses responsive:true, maintainAspectRatio:false, so the
+   canvas fills this container in both dimensions and redraws as the user drags the resize handle.
+   The chart is inset from the bottom-right so the browser's native resize grip stays grabbable
+   instead of being covered by the canvas (which would swallow the drag). */
+.block_reportsources-chartmodal {
+    box-sizing: border-box;
+    height: 60vh;
+    min-height: 30vh;
+    min-width: 280px;
+    max-width: 100%;
+    overflow: hidden;
+    resize: both;
+    padding: 0 14px 14px 0;
+}
+
+.block_reportsources-charttoolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.25rem;
+}
+
+.block_reportsources-chartmodal .chart-image {
+    width: 100%;
+    height: calc(100% - 2rem);
+}
+
+/* Fullscreen: the wrapper fills the viewport. Give it a solid background (the native fullscreen
+   backdrop is transparent) and let the chart take the full area below the toolbar. */
+.block_reportsources-chartmodal:fullscreen {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    padding: 1rem;
+    background: var(--bs-body-bg, #fff);
+    resize: none;
+}
+
+.block_reportsources-chartmodal:fullscreen .chart-image {
+    height: calc(100% - 2.5rem);
+}
