@@ -124,8 +124,17 @@ class block_reportsources extends block_base {
         $rec      = $query->record();
         $rowlimit = max(1, min(100, (int) ($this->config->rowlimit ?? 10)));
 
+        // On a course page, pass the current course id so a query with a pagecoursecolumn shows
+        // only that course's rows. Off a course (Dashboard/site front page) the page course is
+        // SITEID, which is not a real course scope — pass 0 so the page-course filter is skipped
+        // and the viewer sees all rows their other filters/audience allow.
+        $pagecourseid = (int) $this->page->course->id;
+        if ($pagecourseid === SITEID) {
+            $pagecourseid = 0;
+        }
+
         try {
-            $rows = $query->fetch_rows_for_viewer($rowlimit);
+            $rows = $query->fetch_rows_for_viewer($rowlimit, $pagecourseid);
         } catch (\moodle_exception $e) {
             // Misconfigured filter column (fails closed). Show a neutral message, never raw rows.
             $this->content->text = get_string('errdata', 'block_reportsources');
