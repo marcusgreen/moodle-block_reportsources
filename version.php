@@ -26,10 +26,10 @@ defined('MOODLE_INTERNAL') || die();
 
 $plugin->component    = 'block_reportsources';
 $plugin->release      = '0.1.0';
-$plugin->version      = 2026061802;
+$plugin->version      = 2026080601;
 $plugin->requires     = 2024100100; // Moodle 4.5+ for stable Reportbuilder API.
 $plugin->maturity     = MATURITY_ALPHA;
 $plugin->supported    = [405, 502];
 $plugin->dependencies = [
-    'local_reportsources' => 2026061800,
+    'local_reportsources' => 2026080300, // chart_svg server-side SVG renderer.
 ];

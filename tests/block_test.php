@@ -145,9 +145,10 @@ final class block_test extends \advanced_testcase {
 
         $content = $block->get_content();
         $this->assertStringContainsString(get_string('expandchart', 'block_reportsources'), $content->text);
-        // The Expand trigger carries the chart JSON for the client-side modal.
+        // The chart is a server-rendered SVG data URI; the Expand trigger carries a larger copy.
+        $this->assertStringContainsString('data:image/svg+xml;base64,', $content->text);
         $this->assertStringContainsString('data-rsblock-expand', $content->text);
-        $this->assertStringContainsString('data-chart', $content->text);
+        $this->assertStringContainsString('data-chart-src', $content->text);
     }
 
     public function test_get_content_empty_when_unconfigured_and_not_editing(): void {

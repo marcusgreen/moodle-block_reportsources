@@ -14,8 +14,9 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Opens a block's chart full size in a modal, rendered client-side from its JSON definition.
- * The modal offers a fullscreen toggle so the whole chart can fill the viewport.
+ * Opens a block's chart full size in a modal. The chart is a server-rendered SVG image (see
+ * local_reportsources\local\chart_svg), so the modal only enlarges the same picture — no
+ * client-side charting library. A fullscreen toggle lets the chart fill the viewport.
  *
  * @module     block_reportsources/expand
  * @copyright  2026 Marcus Green
@@ -23,8 +24,6 @@
  */
 
 import Modal from 'core/modal';
-import Builder from 'core/chart_builder';
-import Output from 'core/chart_output_chartjs';
 import Notification from 'core/notification';
 import {getString} from 'core/str';
 
@@ -45,28 +44,48 @@ export const init = () => {
 };
 
 /**
- * Build the modal, render the chart into it, and wire the fullscreen toggle.
+ * Build the modal, drop the enlarged SVG into it, and wire the fullscreen toggle.
  *
- * @param {HTMLElement} btn The Expand trigger carrying the chart JSON in data-chart.
+ * @param {HTMLElement} btn The Expand trigger carrying the SVG data URI in data-chart-src.
  * @returns {Promise<void>}
  */
 const openChart = async(btn) => {
-    const data = JSON.parse(btn.dataset.chart);
-    const [enter, exit] = await Promise.all([
+    const src = btn.dataset.chartSrc;
+    const title = btn.dataset.title || '';
+    const [enter, exit, download, svglabel, pnglabel] = await Promise.all([
         getString('fullscreen', 'block_reportsources'),
         getString('exitfullscreen', 'block_reportsources'),
+        getString('download', 'block_reportsources'),
+        getString('downloadsvg', 'block_reportsources'),
+        getString('downloadpng', 'block_reportsources'),
     ]);
+
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = title;
+    img.className = 'img-fluid';
+    img.style.maxWidth = '100%';
+    img.style.height = 'auto';
 
     const body =
         '<div class="block_reportsources-chartmodal">' +
             '<div class="block_reportsources-charttoolbar">' +
                 '<button type="button" class="btn btn-sm btn-secondary" data-rsblock-fullscreen>' + enter + '</button>' +
+                '<div class="dropdown d-inline-block ml-2">' +
+                    '<button type="button" class="btn btn-sm btn-secondary dropdown-toggle" ' +
+                        'data-toggle="dropdown" data-bs-toggle="dropdown" aria-haspopup="true" ' +
+                        'aria-expanded="false" data-rsblock-download>' + download + '</button>' +
+                    '<div class="dropdown-menu">' +
+                        '<button type="button" class="dropdown-item" data-rsblock-dl="svg">' + svglabel + '</button>' +
+                        '<button type="button" class="dropdown-item" data-rsblock-dl="png">' + pnglabel + '</button>' +
+                    '</div>' +
+                '</div>' +
             '</div>' +
             '<div class="chart-image" role="img"></div>' +
         '</div>';
 
     const modal = await Modal.create({
-        title: btn.dataset.title || '',
+        title: title,
         body: body,
         large: true,
         removeOnClose: true,
@@ -75,9 +94,14 @@ const openChart = async(btn) => {
 
     const wrapper = modal.getBody()[0].querySelector('.block_reportsources-chartmodal');
     const fsbtn = wrapper.querySelector('[data-rsblock-fullscreen]');
+    wrapper.querySelector('.chart-image').appendChild(img);
 
-    const chart = await Builder.make(data);
-    new Output(modal.getBody().find('.chart-image'), chart);
+    const filename = (title.replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'chart');
+    wrapper.querySelectorAll('[data-rsblock-dl]').forEach((item) => {
+        item.addEventListener('click', () => {
+            downloadChart(src, filename, item.dataset.rsblockDl).catch(Notification.exception);
+        });
+    });
 
     fsbtn.addEventListener('click', () => {
         if (document.fullscreenElement) {
@@ -91,4 +115,52 @@ const openChart = async(btn) => {
     document.addEventListener('fullscreenchange', () => {
         fsbtn.textContent = document.fullscreenElement === wrapper ? exit : enter;
     });
+};
+
+/**
+ * Download the chart in the requested format.
+ *
+ * SVG is the source image, saved verbatim. PNG is rasterised in the browser: the SVG is painted
+ * onto a canvas at its natural size (on a white ground so transparency does not turn black) and
+ * exported. Nothing leaves the browser.
+ *
+ * @param {String} src The SVG data URI.
+ * @param {String} filename Base name (no extension).
+ * @param {String} format 'svg' or 'png'.
+ * @returns {Promise<void>}
+ */
+const downloadChart = async(src, filename, format) => {
+    if (format === 'svg') {
+        triggerDownload(src, filename + '.svg');
+        return;
+    }
+    const png = await new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.naturalWidth || 900;
+            canvas.height = image.naturalHeight || 560;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/png'));
+        };
+        image.onerror = reject;
+        image.src = src;
+    });
+    triggerDownload(png, filename + '.png');
+};
+
+/**
+ * Click a transient anchor to save a data URI to disk.
+ *
+ * @param {String} href The data URI.
+ * @param {String} name The download filename.
+ */
+const triggerDownload = (href, name) => {
+    const link = document.createElement('a');
+    link.download = name;
+    link.href = href;
+    link.click();
 };

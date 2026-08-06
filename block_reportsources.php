@@ -210,37 +210,32 @@ class block_reportsources extends block_base {
      * @return string
      */
     protected function render_chart(array $rows, array $chartmeta): string {
-        global $OUTPUT;
-
         $xcol = (string) ($chartmeta['xcol'] ?? '');
         $ycol = (string) ($chartmeta['ycol'] ?? '');
         if ($xcol === '' || $ycol === '') {
             return $this->render_table($rows);
         }
 
-        $labels = [];
-        $values = [];
-        foreach ($rows as $row) {
-            $labels[] = (string) ($row[$xcol] ?? '');
-            $values[] = (float) ($row[$ycol] ?? 0);
-        }
+        [$labels, $values] = \local_reportsources\local\query::chart_series($rows, $xcol, $ycol);
+        $type = (string) $chartmeta['type'];
 
-        $chart = match ($chartmeta['type']) {
-            'line'            => new \core\chart_line(),
-            'pie', 'doughnut' => new \core\chart_pie(),
-            default           => new \core\chart_bar(),
-        };
-        if ($chartmeta['type'] === 'doughnut') {
-            $chart->set_doughnut(true);
-        }
-        $chart->add_series(new \core\chart_series($ycol, $values));
-        $chart->set_labels($labels);
+        // Render server-side to a self-contained SVG, matching local_reportsources: no JavaScript,
+        // no Chart.js, and the same image the RB chart report / scheduled export produces. Each SVG
+        // is wrapped in a base64 data URI inside an <img>, which cannot execute script.
+        $out = self::chart_img(
+            \local_reportsources\local\chart_svg::render($type, $labels, $values, ''),
+            $this->title
+        );
 
-        $out = $OUTPUT->render_chart($chart, false);
-
-        // A chart is cramped in a narrow block region. Offer an in-page "Expand" that opens a large
-        // modal rendering the same chart client-side (core/chart_builder), so the full chart shows
-        // without leaving the page. The chart definition is handed to JS as JSON on the trigger.
+        // A chart is cramped in a narrow block region. Offer an in-page "Expand" that opens a modal
+        // showing a larger copy of the same SVG (rendered here, no client-side charting library).
+        $large = \local_reportsources\local\chart_svg::render(
+            $type,
+            $labels,
+            $values,
+            '',
+            ['width' => 900, 'height' => 560]
+        );
         $this->page->requires->js_call_amd('block_reportsources/expand', 'init');
         $out .= html_writer::tag(
             'button',
@@ -249,11 +244,26 @@ class block_reportsources extends block_base {
                 'type'                => 'button',
                 'class'               => 'btn btn-link btn-sm p-0 mt-1',
                 'data-rsblock-expand' => '1',
-                'data-chart'          => json_encode($chart),
+                'data-chart-src'      => 'data:image/svg+xml;base64,' . base64_encode($large),
                 'data-title'          => $this->title,
             ]
         );
 
         return $out;
+    }
+
+    /**
+     * Wrap SVG markup in a responsive, script-safe inline `<img>` (base64 data URI).
+     *
+     * @param string $svg SVG document markup.
+     * @param string $alt Alt text.
+     * @return string HTML.
+     */
+    protected static function chart_img(string $svg, string $alt): string {
+        return html_writer::img(
+            'data:image/svg+xml;base64,' . base64_encode($svg),
+            $alt,
+            ['class' => 'block_reportsources-chart img-fluid', 'style' => 'max-width:100%;height:auto;']
+        );
     }
 }
