@@ -146,9 +146,9 @@ class block_reportsources extends block_base {
         $mode      = $this->config->displaymode ?? 'auto';
 
         if ($rows && ($mode === 'chart' || ($mode === 'auto' && $haschart))) {
-            $this->content->text = $this->render_chart($rows, $chartmeta, $queryid);
+            $this->content->text = $this->render_chart($rows, $chartmeta, $query);
         } else {
-            $this->content->text = $this->render_table($rows);
+            $this->content->text = $this->render_table($rows, $query);
         }
 
         if (!empty($rec->reportid)) {
@@ -165,23 +165,42 @@ class block_reportsources extends block_base {
      * @param array<int, array<string, mixed>> $rows
      * @return string
      */
-    protected function render_table(array $rows): string {
+    protected function render_table(array $rows, \local_reportsources\local\query $query): string {
         if (!$rows) {
             return html_writer::tag('p', get_string('norows', 'block_reportsources'), ['class' => 'text-muted']);
         }
+        // Per-column display metadata, keyed lower-case so the lookup is case-insensitive against the
+        // row keys. Drives the same %%TIMESTAMP() date formatting and %%CASE() text-case transforms
+        // the RB data report applies via column callbacks — both are display-only (the stored value is
+        // raw), so without this the block table diverges from the report.
+        $meta = array_change_key_case($query->columns_meta());
+
         $table = new html_table();
         $table->head = array_map('s', array_keys($rows[0]));
         $table->attributes['class'] = 'table table-sm';
-        // Cells may contain author-authored HTML (e.g. a CONCAT'd course link), exactly as the RB
-        // report renders it. format_text() keeps anchors but strips scripts, so the block is no less
-        // safe than the report. Filters are off so plain values pass through untouched.
         foreach ($rows as $row) {
-            $table->data[] = array_map(
-                static fn($v): string => self::open_links_in_new_tab(
-                    format_text((string) $v, FORMAT_HTML, ['filter' => false])
-                ),
-                array_values($row)
-            );
+            $cells = [];
+            foreach ($row as $col => $v) {
+                $m = $meta[strtolower((string) $col)] ?? [];
+                if (($m['type'] ?? '') === 'timestamp') {
+                    // Raw epoch → formatted date, using the column's saved format (else the default).
+                    $cells[] = ($v === null || $v === '')
+                        ? ''
+                        : s(userdate((int) $v, \local_reportsources\local\query::strftime_format(
+                            (string) ($m['dateformat'] ?? '')), 99, false));
+                } else if (!empty($m['textcase'])) {
+                    // Display-only case transform on the raw text.
+                    $cells[] = s(\local_reportsources\local\query::format_textcase((string) $v, (string) $m['textcase']));
+                } else {
+                    // Cells may contain author-authored HTML (e.g. a CONCAT'd course link), exactly as
+                    // the RB report renders it. format_text() keeps anchors but strips scripts, so the
+                    // block is no less safe than the report. Filters are off so plain values pass through.
+                    $cells[] = self::open_links_in_new_tab(
+                        format_text((string) $v, FORMAT_HTML, ['filter' => false])
+                    );
+                }
+            }
+            $table->data[] = $cells;
         }
         return html_writer::table($table);
     }
@@ -207,23 +226,32 @@ class block_reportsources extends block_base {
      *
      * @param array<int, array<string, mixed>> $rows
      * @param array<string, mixed> $chartmeta
+     * @param \local_reportsources\local\query $query The bound query (for %%CASE%% display transforms).
      * @return string
      */
-    protected function render_chart(array $rows, array $chartmeta): string {
+    protected function render_chart(array $rows, array $chartmeta, \local_reportsources\local\query $query): string {
         $xcol = (string) ($chartmeta['xcol'] ?? '');
         $ycol = (string) ($chartmeta['ycol'] ?? '');
         if ($xcol === '' || $ycol === '') {
-            return $this->render_table($rows);
+            return $this->render_table($rows, $query);
         }
 
-        [$labels, $values] = \local_reportsources\local\query::chart_series($rows, $xcol, $ycol);
+        // Apply the x-column's %%CASE%% transform to the labels, matching chart.php / the RB chart
+        // report — the transform is display-only (the stored value is raw), so the block must apply
+        // it too or its labels differ from every other surface.
+        [$labels, $values] = \local_reportsources\local\query::chart_series(
+            $rows, $xcol, $ycol, $query->column_textcase($xcol));
         $type = (string) $chartmeta['type'];
+
+        // Category/legend label font size, saved with the chart config. Clamped to the same range as
+        // the edit form and the RB chart report so the block matches those surfaces on republish.
+        $labelsize = max(11, min(48, (int) ($chartmeta['labelsize'] ?? 16)));
 
         // Render server-side to a self-contained SVG, matching local_reportsources: no JavaScript,
         // no Chart.js, and the same image the RB chart report / scheduled export produces. Each SVG
         // is wrapped in a base64 data URI inside an <img>, which cannot execute script.
         $out = self::chart_img(
-            \local_reportsources\local\chart_svg::render($type, $labels, $values, ''),
+            \local_reportsources\local\chart_svg::render($type, $labels, $values, '', ['labelsize' => $labelsize]),
             $this->title
         );
 
@@ -234,7 +262,7 @@ class block_reportsources extends block_base {
             $labels,
             $values,
             '',
-            ['width' => 900, 'height' => 560]
+            ['width' => 900, 'height' => 560, 'labelsize' => $labelsize]
         );
         $this->page->requires->js_call_amd('block_reportsources/expand', 'init');
         $out .= html_writer::tag(
