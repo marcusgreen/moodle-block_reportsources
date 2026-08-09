@@ -96,6 +96,21 @@ const openChart = async(btn) => {
     const fsbtn = wrapper.querySelector('[data-rsblock-fullscreen]');
     wrapper.querySelector('.chart-image').appendChild(img);
 
+    // When the report source has "Show data table" enabled, the block renders that table beside the
+    // Expand button (shared markup, class local-reportsources-chart-data). Mirror it into the modal
+    // below the enlarged image by cloning the existing DOM — so the modal always matches the inline
+    // table with no second builder. Appended after .chart-image (not inside it — that has role=img).
+    const dataTable = btn.parentElement && btn.parentElement.querySelector('.local-reportsources-chart-data');
+    if (dataTable) {
+        const clone = dataTable.cloneNode(true);
+        clone.classList.add('mt-3');
+        wrapper.appendChild(clone);
+        // The default layout gives the image the whole (overflow-hidden) box, which would clip the
+        // table below it. This class switches the modal to a scrolling flow with a natural-height
+        // image so both the chart and the table are visible. See styles.css.
+        wrapper.classList.add('has-datatable');
+    }
+
     const filename = (title.replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'chart');
     wrapper.querySelectorAll('[data-rsblock-dl]').forEach((item) => {
         item.addEventListener('click', () => {

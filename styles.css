@@ -38,3 +38,14 @@
 .block_reportsources-chartmodal:fullscreen .chart-image {
     height: calc(100% - 2.5rem);
 }
+
+/* With a data table appended, the modal becomes a scrolling flow: the image sizes naturally and the
+   table follows it instead of being clipped by the fixed-height, overflow-hidden box. */
+.block_reportsources-chartmodal.has-datatable {
+    overflow: auto;
+}
+
+.block_reportsources-chartmodal.has-datatable .chart-image,
+.block_reportsources-chartmodal.has-datatable:fullscreen .chart-image {
+    height: auto;
+}

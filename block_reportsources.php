@@ -247,13 +247,15 @@ class block_reportsources extends block_base {
         // the edit form and the RB chart report so the block matches those surfaces on republish.
         $labelsize = max(11, min(48, (int) ($chartmeta['labelsize'] ?? 16)));
 
-        // Render server-side to a self-contained SVG, matching local_reportsources: no JavaScript,
-        // no Chart.js, and the same image the RB chart report / scheduled export produces. Each SVG
-        // is wrapped in a base64 data URI inside an <img>, which cannot execute script.
-        $out = self::chart_img(
-            \local_reportsources\local\chart_svg::render($type, $labels, $values, '', ['labelsize' => $labelsize]),
-            $this->title
-        );
+        // Render through local_reportsources' shared chart renderer — the same code path the RB chart
+        // report uses — so the block always mirrors any change to chart display (image + optional
+        // "Show data table"). Server-side SVG: no JavaScript, no Chart.js; the <img> holds a base64
+        // data URI and cannot execute script.
+        $out = \local_reportsources\local\query::chart_figure_html($type, $labels, $values, $xcol, $ycol, [
+            'labelsize' => $labelsize,
+            'showdata'  => !empty($chartmeta['showdata']),
+            'alt'       => $this->title,
+        ]);
 
         // A chart is cramped in a narrow block region. Offer an in-page "Expand" that opens a modal
         // showing a larger copy of the same SVG (rendered here, no client-side charting library).
@@ -278,20 +280,5 @@ class block_reportsources extends block_base {
         );
 
         return $out;
-    }
-
-    /**
-     * Wrap SVG markup in a responsive, script-safe inline `<img>` (base64 data URI).
-     *
-     * @param string $svg SVG document markup.
-     * @param string $alt Alt text.
-     * @return string HTML.
-     */
-    protected static function chart_img(string $svg, string $alt): string {
-        return html_writer::img(
-            'data:image/svg+xml;base64,' . base64_encode($svg),
-            $alt,
-            ['class' => 'block_reportsources-chart img-fluid', 'style' => 'max-width:100%;height:auto;']
-        );
     }
 }
